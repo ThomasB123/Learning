@@ -1,0 +1,13 @@
+dl/cifar10
+dl/drive
+dl/*.aux
+dl/*.bbl
+dl/*.bcf
+dl/*.blg
+dl/*.fdb_latexmk
+dl/*.fls
+dl/*.log
+dl/*.out
+dl/*.xml
+dl/*.gz
+rl/video
