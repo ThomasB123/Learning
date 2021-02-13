@@ -5,6 +5,18 @@
 # you can write a brief 8-10 line abstract detailing your submission and experiments here
 # the code is based on https://github.com/seungeunrho/minimalRL/blob/master/dqn.py, which is released under the MIT licesne
 # make sure you reference any code you have studied as above, with one comment line per reference
+'''
+Abstract:
+Rainbow combines 7 x DQN Extensions ( A3C, DQN, DDQN, Prioritised DDQN,
+Dueling DDQN, Distributional DQN, and Noisy DQN )
+We have focused here on value-based methods in the Q-learning family.
+We have not considered purely policy based RL algorithms
+From experimentation in the cited paper, ablation of Noisy DQN is indicated as increasing performance on this specific game, the largest gains appear to be from A3C and Prioritised DDQN.
+( Hessel, M., Modayil, J., van Hasselt, H., Schaul, T., Ostrovski, G., Dabney, W., Horgan, D., Piot, B., Azar, M., 
+& Silver, D. (2018). Rainbow: Combining Improvements in Deep Reinforcement Learning. 
+Proceedings of the AAAI Conference on Artificial Intelligence, 32(1). 
+Retrieved from https://ojs.aaai.org/index.php/AAAI/article/view/11796)
+'''
 
 # imports
 import gym
@@ -16,11 +28,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 
+import math
+import torch.autograd as autograd
+from common.layers import NoisyLinear
+from common.replay_buffer import ReplayBuffer
+from IPython.display import clear_output
+import matplotlib.pyplot as plt
+
+
 # hyperparameters
-learning_rate = 0.0005
-gamma         = 0.98
-buffer_limit  = 50000
-batch_size    = 32
+learning_rate = 0.0005 # 0.001 in Rainbow
+gamma         = 0.98 # 0.99 in Rainbow
+buffer_limit  = 50000 # 10000 in Rainbow
+batch_size    = 32 # 32 in Rainbow
 video_every   = 25
 print_every   = 5
 
@@ -49,21 +69,67 @@ class ReplayBuffer():
     
     def size(self):
         return len(self.buffer)
+env_id = 'CartPole-v0'
+env = gym.make(env_id)
 
-class QNetwork(nn.Module):
-    def __init__(self):
-        super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(np.array(env.observation_space.shape).prod(), 256)
-        self.fc2 = nn.Linear(256, 84)
-        self.fc3 = nn.Linear(84, env.action_space.n)
+# Rainbow: Combining Improvements in Deep Reinforcement Learning
+# code adapted from https://github.com/higgsfield/RL-Adventure/blob/master/7.rainbow%20dqn.ipynb
+
+class RainbowDQN(nn.Module):
+    def __init__(self, num_inputs, num_actions, num_atoms, Vmin, Vmax):
+        super(RainbowDQN, self).__init__()
+
+        self.num_inputs = num_inputs
+        self.num_actions = num_actions
+        self.num_atoms = num_atoms
+        self.Vmin = Vmin # maybe not needed for Gravitar, but this is for cartpole
+        self.Vmax = Vmax # maybe not needed for Gravitar, but this is for cartpole
+
+        self.linear1 = nn.Linear(num_inputs, 32)
+        self.linear2 = nn.Linear(64, self.num_atoms)
+
+        self.noisy_value1 = NoisyLinear(64, 64)
+        self.noisy_value2 = NoisyLinear(64, self.num_atoms)
+
+        self.noisy_advantage1 = NoisyLinear(64, 64)
+        self.noisy_advantage2 = NoisyLinear(64, self.num_atoms * self.num_actions)
+        
+        #self.fc1 = nn.Linear(np.array(env.observation_space.shape).prod(), 256) # was here before
+        #self.fc2 = nn.Linear(256, 84)
+        #self.fc3 = nn.Linear(84, env.action_space.n)
 
     def forward(self, x):
-        x = x.view(x.size(0),-1)
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = self.fc3(x)
+        batch_size = x.size(0)
+        x = F.relu(self.linear1(x))
+        x = F.relu(self.linear2(x))
+        value = F.relu(self.noisy_value1(x))
+        value = self.noisy_value2(value)
+        advantage = F.relu(self.noisy_advantage1(x))
+        advantage = self.noisy_advantage2(advantage)
+        value = value.view(batch_size, 1, self.num_atoms)
+        advantage = advantage.view(batch_size, self.num_actions, self.num_atoms)
+        x = value + advantage - advantage.mean(1, keepdim=True)
+        x = F.softmax(x.view(-1, self.num_atoms)).view(-1, self.num_actions, self.num_atoms)
+
+        #x = x.view(x.size(0),-1)
+        #x = F.relu(self.fc1(x))
+        #x = F.relu(self.fc2(x))
+        #x = self.fc3(x)
         return x
-      
+    
+    def reset_noise(self):
+        self.noisy_value1.reset_noise()
+        self.noisy_value2.reset_noise()
+        self.noisy_advantage1.reset_noise()
+        self.noisy_advantage2.reset_noise()
+    
+    def act(self, state):
+        state = Variable(torch.FloatTensor(state).unsqueeze(0), volatile=True)
+        dist = self.forward(state).data.cpu()
+        dist = dist * torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
+        action = dist.sum(2).max(1)[1].numpy()[0]
+        return action
+    '''
     def sample_action(self, obs, epsilon):
         out = self.forward(obs)
         coin = random.random()
@@ -71,7 +137,120 @@ class QNetwork(nn.Module):
             return random.randint(0,1)
         else : 
             return out.argmax().item()
-            
+    '''
+
+num_atoms = 51
+Vmin = -10
+Vmax = 10
+
+current_model = RainbowDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
+target_model = RainbowDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
+
+optimiser = optim.Adam(current_model.parameters(), learning_rate)
+
+replay_buffer = ReplayBuffer()
+
+def update_target(current_model, target_model):
+    target_model.load_state_dict(current_model.state_dict())
+update_target(current_model, target_model)
+
+def projection_distribution(next_state, rewards, dones):
+    batch_size = next_state.size(0)
+    
+    delta_z = float(Vmax - Vmin) / (num_atoms - 1)
+    support = torch.linspace(Vmin, Vmax, num_atoms)
+    
+    next_dist = target_model(next_state).data.cpu() * support
+    next_action = next_dist.sum(2).max(1)[1]
+    next_action = next_action.unsqueeze(1).unsqueeze(1).expand(next_dist.size(0), 1, next_dist.size(2))
+    next_dist = next_dist.gather(1, next_action).squeeze(1)
+    
+    rewards = rewards.unsqueeze(1).expand_as(next_dist)
+    dones = dones.unsqueeze(1).expand_as(next_dist)
+    support = support.unsqueeze(0).expand_as(next_dist)
+
+    Tz = rewards + (1 - dones) * 0.99 * support
+    Tz = Tz.clamp(min=Vmin, max=Vmax)
+    b = (Tz - Vmin / delta_z)
+    l = b.floor().long()
+    u = b.ceil().long()
+
+    offset = torch.linspace(0, (batch_size - 1) * num_atoms, batch_size).long().unsqueeze(1).expand(batch_size, num_atoms)
+    proj_dist = torch.zeros(next_dist.size())
+    proj_dist.view(-1).index_add(0, (l + offset).view(-1), (next_dist * (u.float() - b)).view(-1))
+    proj_dist.view(-1).index_add(0, (u + offset).view(-1), (next_dist * (b - l.float())).view(-1))
+    return proj_dist
+
+# Computing Temporal Difference Loss:
+
+def compute_td_loss(batch_size):
+    state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+
+    state = Variable(torch.FloatTensor(np.float32(state)))
+    next_state = Variable(torch.FloatTensor(np.float32(next_state)), volatile=True)
+    action = Variable(torch.LongTensor(action))
+    reward = torch.FloatTensor(reward)
+    done = torch.FloatTensor(np.float32(done))
+
+    proj_dist = projection_distribution(next_state, reward, done)
+
+    dist = current_model(state)
+    action = action.unsqueeze(1).unsqueeze(1).expand(batch_size, 1, num_atoms)
+    dist = dist.gather(1, action).squeeze(1)
+    dist.data.clamp(0.01, 0.99)
+    loss = -(Variable(proj_dist) * dist.log()).sum(1)
+    loss = loss.mean()
+
+    optimiser.zero_grad()
+    loss.backward()
+    optimiser.step()
+
+    current_model.reset_noise()
+    target_model.reset_noise()
+    
+    return loss
+
+def plot(frame_idx, rewards, losses):
+    clear_output(True)
+    plt.figure(figsize=(20,5))
+    plt.subplot(131)
+    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
+    plt.plot(rewards)
+    plt.subplot(132)
+    plt.title('loss')
+    plt.plot(losses)
+    plt.show()
+
+# Training:
+
+num_frames = 15000
+
+losses = []
+all_rewards = []
+episode_reward = 0
+
+state = env.reset()
+for frame_idx in range(1, num_frames+1):
+    action = current_model.act(state)
+    next_state, reward, done, _ = env.step(action)
+    replay_buffer.push(state, action, reward, next_state, done)
+    state = next_state
+    episode_reward += reward
+    if done:
+        state = env.reset()
+        all_rewards.append(episode_reward)
+        episode_reward = 0
+    if len(replay_buffer) > batch_size:
+        loss = compute_td_loss(batch_size)
+        losses.append(loss.data[0])
+    if frame_idx % 200 == 0:
+        plot(frame_idx, all_rewards, losses)
+    if frame_idx % 1000 == 0:
+        update_target(current_model, target_model)
+
+
+
+'''
 def train(q, q_target, memory, optimizer):
     for i in range(10):
         s,a,r,s_prime,done_mask = memory.sample(batch_size)
@@ -92,6 +271,19 @@ def train(q, q_target, memory, optimizer):
 """
 
 # setup the Gravitar ram environment, and record a video every 50 episodes. You can use the non-ram version here if you prefer
+# Gravitar-ram-v0
+# Gravitar-ram-v4
+# Gravitar-ramDeterministic-v0
+# Gravitar-ramDeterministic-v4
+# Gravitar-ramNoFrameskip-v0
+# Gravitar-ramNoFrameskip-v4
+# Gravitar-v0
+# Gravitar-v4
+# Gravitar-Deterministic-v0
+# Gravitar-Deterministic-v4
+# GravitarNoFrameskip-v0
+# GravitarNoFrameskip-v4
+
 env = gym.make('Gravitar-ram-v0')
 env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
 
@@ -103,8 +295,8 @@ random.seed(seed)
 np.random.seed(seed)
 env.action_space.seed(seed)
 
-q = QNetwork()
-q_target = QNetwork()
+q = RainbowDQN()
+q_target = RainbowDQN()
 q_target.load_state_dict(q.state_dict())
 memory = ReplayBuffer()
 
@@ -167,3 +359,4 @@ for n_episode in range(int(1e32)):
 # approach overly complex papers more like an engineer
 # run the code and dismantle it back down to the concepts that make it work
 # lower variance can really help with lowering training times for iteration
+'''
