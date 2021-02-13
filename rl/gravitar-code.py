@@ -30,9 +30,7 @@ import torch.optim as optim
 
 import math
 import torch.autograd as autograd
-from common import *
-#from common.layers import NoisyLinear
-#from common.replay_buffer import ReplayBuffer
+#from torch.autograd import Variable
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
 from torch.nn.parameter import Parameter
@@ -48,83 +46,65 @@ batch_size    = 32 # 32 in Rainbow
 video_every   = 25
 print_every   = 5
 
-# adapted from a combination of:
-# 1. https://github.com/akolishchak/doom-net-pytorch/blob/master/src/noisy_linear.py
-# 2. https://github.com/Scitator/Run-Skeleton-Run/blob/master/common/modules/NoisyLinear.py
-# 3. https://github.com/PacktPublishing/Hands-On-Game-AI-with-Python/blob/91732f5a739b792551ed610c54cc0e6168696311/Chapter_10/Chapter_10/common/layers.py#L7
-
 class NoisyLinear(nn.Module):
-    def __init__(self, in_features, out_features, use_cuda, bias=True, factorised=True, std_init=None):
+    def __init__(self, in_features, out_features, use_cuda, std_init=0.4):
         super(NoisyLinear, self).__init__()
-
-        self.use_cuda = use_cuda
-        self.in_features = in_features
+        
+        self.use_cuda     = use_cuda
+        self.in_features  = in_features
         self.out_features = out_features
-        self.factorised = factorised
-        self.weight_mu = Parameter(torch.Tensor(out_features, in_features))
-        self.weight_sigma = Parameter(torch.Tensor(out_features, in_features))
-        if bias:
-            self.bias_mu = Parameter(torch.Tensor(out_features))
-            self.bias_sigma = Parameter(torch.Tensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        if not std_init:
-            if self.factorised:
-                self.std_init = 0.4
-            else:
-                self.std_init = 0.017
-        else:
-            self.std_init = std_init
-        self.reset_parameters(bias)
-
-    def sample(self):
-        if self.training:
-            self.weight_epsilon.normal_()
-            self.weight = self.weight_epsilon.mul(self.weight_sigma).add_(self.weight_mu)
-            if self.bias is not None:
-                self.bias_epsilon.normal_()
-                self.bias = self.bias_epsilon.mul(self.bias_sigma).add_(self.bias_mu)
-        else:
-            self.weight = self.weight_mu.detach()
-            if self.bias is not None:
-                self.bias = self.bias_mu.detach()
-        self.sampled = True
-
-    def reset_parameters(self, bias):
-        if self.factorised:
-            mu_range = 1. / math.sqrt(self.weight_mu.size(1))
-            self.weight_mu.data.uniform_(-mu_range, mu_range)
-            self.weight_sigma.data.fill_(self.std_init / math.sqrt(self.weight_sigma.size(1)))
-            if bias:
-                self.bias_mu.data.uniform_(-mu_range, mu_range)
-                self.bias_sigma.data.fill_(self.std_init / math.sqrt(self.bias_sigma.size(0)))
-        else:
-            mu_range = math.sqrt(3. / self.weight_mu.size(1))
-            self.weight_mu.data.uniform_(-mu_range, mu_range)
-            self.weight_sigma.data.fill_(self.std_init)
-            if bias:
-                self.bias_mu.data.uniform_(-mu_range, mu_range)
-                self.bias_sigma.data.fill_(self.std_init)
+        self.std_init     = std_init
+        
+        self.weight_mu    = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.weight_sigma = nn.Parameter(torch.FloatTensor(out_features, in_features))
+        self.register_buffer('weight_epsilon', torch.FloatTensor(out_features, in_features))
+        
+        self.bias_mu    = nn.Parameter(torch.FloatTensor(out_features))
+        self.bias_sigma = nn.Parameter(torch.FloatTensor(out_features))
+        self.register_buffer('bias_epsilon', torch.FloatTensor(out_features))
+        
+        self.reset_parameters()
+        self.reset_noise()
     
-    def scale_noise(self, size):
-        x = torch.Tensor(size).normal_()
+    def forward(self, x):
+        if self.use_cuda:
+            weight_epsilon = self.weight_epsilon.cuda()
+            bias_epsilon   = self.bias_epsilon.cuda()
+        else:
+            weight_epsilon = self.weight_epsilon
+            bias_epsilon   = self.bias_epsilon
+            
+        if self.training: 
+            weight = self.weight_mu + self.weight_sigma.mul(Variable(weight_epsilon))
+            bias   = self.bias_mu   + self.bias_sigma.mul(Variable(bias_epsilon))
+        else:
+            weight = self.weight_mu
+            bias   = self.bias_mu
+        
+        return F.linear(x, weight, bias)
+    
+    def reset_parameters(self):
+        mu_range = 1 / math.sqrt(self.weight_mu.size(1))
+        
+        self.weight_mu.data.uniform_(-mu_range, mu_range)
+        self.weight_sigma.data.fill_(self.std_init / math.sqrt(self.weight_sigma.size(1)))
+        
+        self.bias_mu.data.uniform_(-mu_range, mu_range)
+        self.bias_sigma.data.fill_(self.std_init / math.sqrt(self.bias_sigma.size(0)))
+    
+    def reset_noise(self):
+        epsilon_in  = self._scale_noise(self.in_features)
+        epsilon_out = self._scale_noise(self.out_features)
+        
+        self.weight_epsilon.copy_(epsilon_out.ger(epsilon_in))
+        self.bias_epsilon.copy_(self._scale_noise(self.out_features))
+    
+    def _scale_noise(self, size):
+        x = torch.randn(size)
         x = x.sign().mul(x.abs().sqrt())
         return x
 
-    def forward(self, input):
-        if self.factorised:
-            epsilon_in = self.scale_noise(self.in_features)
-            epsilon_out = self.scale_noise(self.out_features)
-            weight_epsilon = Variable(epsilon_out.ger(epsilon_in))
-            bias_epsilon = Variable(self.scale_noise(self.out_features))
-        else:
-            weight_epsilon = Variable(torch.Tensor(self.out_features, self.in_features).normal_())
-            bias_epsilon = Variable(torch.Tensor(self.out_features).normal_())
-        return F.linear(input,
-                        self.weight_mu + self.weight_sigma.mul(weight_epsilon),
-                        self.bias_mu + self.bias_sigma.mul(bias_epsilon))
-
-
+'''
 class ReplayBuffer():
     def __init__(self):
         self.buffer = collections.deque(maxlen=buffer_limit)
@@ -150,6 +130,69 @@ class ReplayBuffer():
     
     def size(self):
         return len(self.buffer)
+'''
+
+class ReplayBuffer(object):
+    def __init__(self, size):
+        """Create Replay buffer.
+        Parameters
+        ----------
+        size: int
+            Max number of transitions to store in the buffer. When the buffer
+            overflows the old memories are dropped.
+        """
+        self._storage = []
+        self._maxsize = size
+        self._next_idx = 0
+
+    def __len__(self):
+        return len(self._storage)
+
+    def push(self, state, action, reward, next_state, done):
+        data = (state, action, reward, next_state, done)
+
+        if self._next_idx >= len(self._storage):
+            self._storage.append(data)
+        else:
+            self._storage[self._next_idx] = data
+        self._next_idx = (self._next_idx + 1) % self._maxsize
+
+    def _encode_sample(self, idxes):
+        obses_t, actions, rewards, obses_tp1, dones = [], [], [], [], []
+        for i in idxes:
+            data = self._storage[i]
+            obs_t, action, reward, obs_tp1, done = data
+            obses_t.append(np.array(obs_t, copy=False))
+            actions.append(np.array(action, copy=False))
+            rewards.append(reward)
+            obses_tp1.append(np.array(obs_tp1, copy=False))
+            dones.append(done)
+        return np.array(obses_t), np.array(actions), np.array(rewards), np.array(obses_tp1), np.array(dones)
+
+    def sample(self, batch_size):
+        """Sample a batch of experiences.
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
+        Returns
+        -------
+        obs_batch: np.array
+            batch of observations
+        act_batch: np.array
+            batch of actions executed given obs_batch
+        rew_batch: np.array
+            rewards received as results of executing act_batch
+        next_obs_batch: np.array
+            next set of observations seen after executing act_batch
+        done_mask: np.array
+            done_mask[i] = 1 if executing act_batch[i] resulted in
+            the end of an episode and 0 otherwise.
+        """
+        idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
+        return self._encode_sample(idxes)
+
+
 env_id = 'CartPole-v0'
 env = gym.make(env_id)
 
@@ -167,7 +210,7 @@ class RainbowDQN(nn.Module):
         self.Vmax = Vmax # maybe not needed for Gravitar, but this is for cartpole
 
         self.linear1 = nn.Linear(num_inputs, 32)
-        self.linear2 = nn.Linear(64, self.num_atoms)
+        self.linear2 = nn.Linear(32, 64)
 
         self.noisy_value1 = NoisyLinear(64, 64, use_cuda=USE_CUDA)
         self.noisy_value2 = NoisyLinear(64, self.num_atoms, use_cuda=USE_CUDA)
@@ -205,7 +248,7 @@ class RainbowDQN(nn.Module):
         self.noisy_advantage2.reset_noise()
     
     def act(self, state):
-        state = Variable(torch.FloatTensor(state).unsqueeze(0), volatile=True)
+        state = Variable(torch.FloatTensor(state).unsqueeze(0))#, volatile=True)
         dist = self.forward(state).data.cpu()
         dist = dist * torch.linspace(self.Vmin, self.Vmax, self.num_atoms)
         action = dist.sum(2).max(1)[1].numpy()[0]
@@ -233,7 +276,7 @@ if USE_CUDA:
 
 optimiser = optim.Adam(current_model.parameters(), learning_rate)
 
-replay_buffer = ReplayBuffer()
+replay_buffer = ReplayBuffer(buffer_limit)
 
 def update_target(current_model, target_model):
     target_model.load_state_dict(current_model.state_dict())
@@ -272,7 +315,7 @@ def compute_td_loss(batch_size):
     state, action, reward, next_state, done = replay_buffer.sample(batch_size)
 
     state = Variable(torch.FloatTensor(np.float32(state)))
-    next_state = Variable(torch.FloatTensor(np.float32(next_state)), volatile=True)
+    next_state = Variable(torch.FloatTensor(np.float32(next_state)))#, volatile=True)
     action = Variable(torch.LongTensor(action))
     reward = torch.FloatTensor(reward)
     done = torch.FloatTensor(np.float32(done))
@@ -327,12 +370,11 @@ for frame_idx in range(1, num_frames+1):
         episode_reward = 0
     if len(replay_buffer) > batch_size:
         loss = compute_td_loss(batch_size)
-        losses.append(loss.data[0])
+        losses.append(loss.data.item())#[0])
     if frame_idx % 200 == 0:
         plot(frame_idx, all_rewards, losses)
     if frame_idx % 1000 == 0:
         update_target(current_model, target_model)
-
 
 def train(q, q_target, memory, optimizer):
     for i in range(10):
