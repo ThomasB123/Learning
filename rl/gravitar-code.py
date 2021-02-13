@@ -30,19 +30,100 @@ import torch.optim as optim
 
 import math
 import torch.autograd as autograd
-from common.layers import NoisyLinear
-from common.replay_buffer import ReplayBuffer
+from common import *
+#from common.layers import NoisyLinear
+#from common.replay_buffer import ReplayBuffer
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
-
+from torch.nn.parameter import Parameter
+#from common.wrappers import make_atari, wrap_deepmind, wrap_pytorch
+USE_CUDA = torch.cuda.is_available()
+Variable = lambda *args, **kwargs: autograd.Variable(*args, **kwargs).cuda() if USE_CUDA else autograd.Variable(*args, **kwargs)
 
 # hyperparameters
-learning_rate = 0.0005 # 0.001 in Rainbow
-gamma         = 0.98 # 0.99 in Rainbow
-buffer_limit  = 50000 # 10000 in Rainbow
+learning_rate = 0.001 #0.0005 # 0.001 in Rainbow
+gamma         = 0.99 #0.98 # 0.99 in Rainbow
+buffer_limit  = 10000 #50000 # 10000 in Rainbow
 batch_size    = 32 # 32 in Rainbow
 video_every   = 25
 print_every   = 5
+
+# adapted from a combination of:
+# 1. https://github.com/akolishchak/doom-net-pytorch/blob/master/src/noisy_linear.py
+# 2. https://github.com/Scitator/Run-Skeleton-Run/blob/master/common/modules/NoisyLinear.py
+# 3. https://github.com/PacktPublishing/Hands-On-Game-AI-with-Python/blob/91732f5a739b792551ed610c54cc0e6168696311/Chapter_10/Chapter_10/common/layers.py#L7
+
+class NoisyLinear(nn.Module):
+    def __init__(self, in_features, out_features, use_cuda, bias=True, factorised=True, std_init=None):
+        super(NoisyLinear, self).__init__()
+
+        self.use_cuda = use_cuda
+        self.in_features = in_features
+        self.out_features = out_features
+        self.factorised = factorised
+        self.weight_mu = Parameter(torch.Tensor(out_features, in_features))
+        self.weight_sigma = Parameter(torch.Tensor(out_features, in_features))
+        if bias:
+            self.bias_mu = Parameter(torch.Tensor(out_features))
+            self.bias_sigma = Parameter(torch.Tensor(out_features))
+        else:
+            self.register_parameter('bias', None)
+        if not std_init:
+            if self.factorised:
+                self.std_init = 0.4
+            else:
+                self.std_init = 0.017
+        else:
+            self.std_init = std_init
+        self.reset_parameters(bias)
+
+    def sample(self):
+        if self.training:
+            self.weight_epsilon.normal_()
+            self.weight = self.weight_epsilon.mul(self.weight_sigma).add_(self.weight_mu)
+            if self.bias is not None:
+                self.bias_epsilon.normal_()
+                self.bias = self.bias_epsilon.mul(self.bias_sigma).add_(self.bias_mu)
+        else:
+            self.weight = self.weight_mu.detach()
+            if self.bias is not None:
+                self.bias = self.bias_mu.detach()
+        self.sampled = True
+
+    def reset_parameters(self, bias):
+        if self.factorised:
+            mu_range = 1. / math.sqrt(self.weight_mu.size(1))
+            self.weight_mu.data.uniform_(-mu_range, mu_range)
+            self.weight_sigma.data.fill_(self.std_init / math.sqrt(self.weight_sigma.size(1)))
+            if bias:
+                self.bias_mu.data.uniform_(-mu_range, mu_range)
+                self.bias_sigma.data.fill_(self.std_init / math.sqrt(self.bias_sigma.size(0)))
+        else:
+            mu_range = math.sqrt(3. / self.weight_mu.size(1))
+            self.weight_mu.data.uniform_(-mu_range, mu_range)
+            self.weight_sigma.data.fill_(self.std_init)
+            if bias:
+                self.bias_mu.data.uniform_(-mu_range, mu_range)
+                self.bias_sigma.data.fill_(self.std_init)
+    
+    def scale_noise(self, size):
+        x = torch.Tensor(size).normal_()
+        x = x.sign().mul(x.abs().sqrt())
+        return x
+
+    def forward(self, input):
+        if self.factorised:
+            epsilon_in = self.scale_noise(self.in_features)
+            epsilon_out = self.scale_noise(self.out_features)
+            weight_epsilon = Variable(epsilon_out.ger(epsilon_in))
+            bias_epsilon = Variable(self.scale_noise(self.out_features))
+        else:
+            weight_epsilon = Variable(torch.Tensor(self.out_features, self.in_features).normal_())
+            bias_epsilon = Variable(torch.Tensor(self.out_features).normal_())
+        return F.linear(input,
+                        self.weight_mu + self.weight_sigma.mul(weight_epsilon),
+                        self.bias_mu + self.bias_sigma.mul(bias_epsilon))
+
 
 class ReplayBuffer():
     def __init__(self):
@@ -88,11 +169,11 @@ class RainbowDQN(nn.Module):
         self.linear1 = nn.Linear(num_inputs, 32)
         self.linear2 = nn.Linear(64, self.num_atoms)
 
-        self.noisy_value1 = NoisyLinear(64, 64)
-        self.noisy_value2 = NoisyLinear(64, self.num_atoms)
+        self.noisy_value1 = NoisyLinear(64, 64, use_cuda=USE_CUDA)
+        self.noisy_value2 = NoisyLinear(64, self.num_atoms, use_cuda=USE_CUDA)
 
-        self.noisy_advantage1 = NoisyLinear(64, 64)
-        self.noisy_advantage2 = NoisyLinear(64, self.num_atoms * self.num_actions)
+        self.noisy_advantage1 = NoisyLinear(64, 64, use_cuda=USE_CUDA)
+        self.noisy_advantage2 = NoisyLinear(64, self.num_atoms * self.num_actions, use_cuda=USE_CUDA)
         
         #self.fc1 = nn.Linear(np.array(env.observation_space.shape).prod(), 256) # was here before
         #self.fc2 = nn.Linear(256, 84)
@@ -145,6 +226,10 @@ Vmax = 10
 
 current_model = RainbowDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
 target_model = RainbowDQN(env.observation_space.shape[0], env.action_space.n, num_atoms, Vmin, Vmax)
+
+if USE_CUDA:
+    current_model = current_model.cuda()
+    target_model = target_model.cuda()
 
 optimiser = optim.Adam(current_model.parameters(), learning_rate)
 
@@ -249,8 +334,6 @@ for frame_idx in range(1, num_frames+1):
         update_target(current_model, target_model)
 
 
-
-'''
 def train(q, q_target, memory, optimizer):
     for i in range(10):
         s,a,r,s_prime,done_mask = memory.sample(batch_size)
@@ -284,9 +367,10 @@ def train(q, q_target, memory, optimizer):
 # GravitarNoFrameskip-v0
 # GravitarNoFrameskip-v4
 
-env = gym.make('Gravitar-ram-v0')
-env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
-
+#env = gym.make('Gravitar-ram-v0')
+#env = gym.make('PongNoFrameskip-v4')
+#env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
+'''
 # reproducible environment and action spaces, do not change lines 6-11 here (tools > settings > editor > show line numbers)
 seed = 742
 torch.manual_seed(seed)
