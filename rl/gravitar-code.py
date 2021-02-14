@@ -37,6 +37,7 @@ from collections import deque
 from gym import spaces
 import cv2
 cv2.ocl.setUseOpenCL(False)
+import operator
 
 USE_CUDA = torch.cuda.is_available()
 Variable = lambda *args, **kwargs: autograd.Variable(*args, **kwargs).cuda() if USE_CUDA else autograd.Variable(*args, **kwargs)
@@ -127,6 +128,141 @@ class ReplayBuffer():
         return len(self.buffer)
 '''
 
+class SegmentTree(object):
+    def __init__(self, capacity, operation, neutral_element):
+        """Build a Segment Tree data structure.
+        https://en.wikipedia.org/wiki/Segment_tree
+        Can be used as regular array, but with two
+        important differences:
+            a) setting item's value is slightly slower.
+               It is O(lg capacity) instead of O(1).
+            b) user has access to an efficient `reduce`
+               operation which reduces `operation` over
+               a contiguous subsequence of items in the
+               array.
+        Paramters
+        ---------
+        capacity: int
+            Total size of the array - must be a power of two.
+        operation: lambda obj, obj -> obj
+            and operation for combining elements (eg. sum, max)
+            must for a mathematical group together with the set of
+            possible values for array elements.
+        neutral_element: obj
+            neutral element for the operation above. eg. float('-inf')
+            for max and 0 for sum.
+        """
+        assert capacity > 0 and capacity & (capacity - 1) == 0, "capacity must be positive and a power of 2."
+        self._capacity = capacity
+        self._value = [neutral_element for _ in range(2 * capacity)]
+        self._operation = operation
+
+    def _reduce_helper(self, start, end, node, node_start, node_end):
+        if start == node_start and end == node_end:
+            return self._value[node]
+        mid = (node_start + node_end) // 2
+        if end <= mid:
+            return self._reduce_helper(start, end, 2 * node, node_start, mid)
+        else:
+            if mid + 1 <= start:
+                return self._reduce_helper(start, end, 2 * node + 1, mid + 1, node_end)
+            else:
+                return self._operation(
+                    self._reduce_helper(start, mid, 2 * node, node_start, mid),
+                    self._reduce_helper(mid + 1, end, 2 * node + 1, mid + 1, node_end)
+                )
+
+    def reduce(self, start=0, end=None):
+        """Returns result of applying `self.operation`
+        to a contiguous subsequence of the array.
+            self.operation(arr[start], operation(arr[start+1], operation(... arr[end])))
+        Parameters
+        ----------
+        start: int
+            beginning of the subsequence
+        end: int
+            end of the subsequences
+        Returns
+        -------
+        reduced: obj
+            result of reducing self.operation over the specified range of array elements.
+        """
+        if end is None:
+            end = self._capacity
+        if end < 0:
+            end += self._capacity
+        end -= 1
+        return self._reduce_helper(start, end, 1, 0, self._capacity - 1)
+
+    def __setitem__(self, idx, val):
+        # index of the leaf
+        idx += self._capacity
+        self._value[idx] = val
+        idx //= 2
+        while idx >= 1:
+            self._value[idx] = self._operation(
+                self._value[2 * idx],
+                self._value[2 * idx + 1]
+            )
+            idx //= 2
+
+    def __getitem__(self, idx):
+        assert 0 <= idx < self._capacity
+        return self._value[self._capacity + idx]
+
+
+class SumSegmentTree(SegmentTree):
+    def __init__(self, capacity):
+        super(SumSegmentTree, self).__init__(
+            capacity=capacity,
+            operation=operator.add,
+            neutral_element=0.0
+        )
+
+    def sum(self, start=0, end=None):
+        """Returns arr[start] + ... + arr[end]"""
+        return super(SumSegmentTree, self).reduce(start, end)
+
+    def find_prefixsum_idx(self, prefixsum):
+        """Find the highest index `i` in the array such that
+            sum(arr[0] + arr[1] + ... + arr[i - i]) <= prefixsum
+        if array values are probabilities, this function
+        allows to sample indexes according to the discrete
+        probability efficiently.
+        Parameters
+        ----------
+        perfixsum: float
+            upperbound on the sum of array prefix
+        Returns
+        -------
+        idx: int
+            highest index satisfying the prefixsum constraint
+        """
+        assert 0 <= prefixsum <= self.sum() + 1e-5
+        idx = 1
+        while idx < self._capacity:  # while non-leaf
+            if self._value[2 * idx] > prefixsum:
+                idx = 2 * idx
+            else:
+                prefixsum -= self._value[2 * idx]
+                idx = 2 * idx + 1
+        return idx - self._capacity
+
+
+class MinSegmentTree(SegmentTree):
+    def __init__(self, capacity):
+        super(MinSegmentTree, self).__init__(
+            capacity=capacity,
+            operation=min,
+            neutral_element=float('inf')
+        )
+
+    def min(self, start=0, end=None):
+        """Returns min(arr[start], ...,  arr[end])"""
+
+        return super(MinSegmentTree, self).reduce(start, end)
+
+
 class ReplayBuffer(object):
     def __init__(self, size):
         """Create Replay buffer.
@@ -186,6 +322,120 @@ class ReplayBuffer(object):
         """
         idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
         return self._encode_sample(idxes)
+
+
+class PrioritizedReplayBuffer(ReplayBuffer):
+    def __init__(self, size, alpha):
+        """Create Prioritized Replay buffer.
+        Parameters
+        ----------
+        size: int
+            Max number of transitions to store in the buffer. When the buffer
+            overflows the old memories are dropped.
+        alpha: float
+            how much prioritization is used
+            (0 - no prioritization, 1 - full prioritization)
+        See Also
+        --------
+        ReplayBuffer.__init__
+        """
+        super(PrioritizedReplayBuffer, self).__init__(size)
+        assert alpha > 0
+        self._alpha = alpha
+
+        it_capacity = 1
+        while it_capacity < size:
+            it_capacity *= 2
+
+        self._it_sum = SumSegmentTree(it_capacity)
+        self._it_min = MinSegmentTree(it_capacity)
+        self._max_priority = 1.0
+
+    def push(self, *args, **kwargs):
+        """See ReplayBuffer.store_effect"""
+        idx = self._next_idx
+        super(PrioritizedReplayBuffer, self).push(*args, **kwargs)
+        self._it_sum[idx] = self._max_priority ** self._alpha
+        self._it_min[idx] = self._max_priority ** self._alpha
+
+    def _sample_proportional(self, batch_size):
+        res = []
+        for _ in range(batch_size):
+            # TODO(szymon): should we ensure no repeats?
+            mass = random.random() * self._it_sum.sum(0, len(self._storage) - 1)
+            idx = self._it_sum.find_prefixsum_idx(mass)
+            res.append(idx)
+        return res
+
+    def sample(self, batch_size, beta):
+        """Sample a batch of experiences.
+        compared to ReplayBuffer.sample
+        it also returns importance weights and idxes
+        of sampled experiences.
+        Parameters
+        ----------
+        batch_size: int
+            How many transitions to sample.
+        beta: float
+            To what degree to use importance weights
+            (0 - no corrections, 1 - full correction)
+        Returns
+        -------
+        obs_batch: np.array
+            batch of observations
+        act_batch: np.array
+            batch of actions executed given obs_batch
+        rew_batch: np.array
+            rewards received as results of executing act_batch
+        next_obs_batch: np.array
+            next set of observations seen after executing act_batch
+        done_mask: np.array
+            done_mask[i] = 1 if executing act_batch[i] resulted in
+            the end of an episode and 0 otherwise.
+        weights: np.array
+            Array of shape (batch_size,) and dtype np.float32
+            denoting importance weight of each sampled transition
+        idxes: np.array
+            Array of shape (batch_size,) and dtype np.int32
+            idexes in buffer of sampled experiences
+        """
+        assert beta > 0
+
+        idxes = self._sample_proportional(batch_size)
+
+        weights = []
+        p_min = self._it_min.min() / self._it_sum.sum()
+        max_weight = (p_min * len(self._storage)) ** (-beta)
+
+        for idx in idxes:
+            p_sample = self._it_sum[idx] / self._it_sum.sum()
+            weight = (p_sample * len(self._storage)) ** (-beta)
+            weights.append(weight / max_weight)
+        weights = np.array(weights)
+        encoded_sample = self._encode_sample(idxes)
+        return tuple(list(encoded_sample) + [weights, idxes])
+
+    def update_priorities(self, idxes, priorities):
+        """Update priorities of sampled transitions.
+        sets priority of transition at index idxes[i] in buffer
+        to priorities[i].
+        Parameters
+        ----------
+        idxes: [int]
+            List of idxes of sampled transitions
+        priorities: [float]
+            List of updated priorities corresponding to
+            transitions at the sampled idxes denoted by
+            variable `idxes`.
+        """
+        assert len(idxes) == len(priorities)
+        for idx, priority in zip(idxes, priorities):
+            assert priority > 0
+            assert 0 <= idx < len(self._storage)
+            self._it_sum[idx] = priority ** self._alpha
+            self._it_min[idx] = priority ** self._alpha
+
+            self._max_priority = max(self._max_priority, priority)
 
 # Rainbow: Combining Improvements in Deep Reinforcement Learning
 # code adapted from https://github.com/higgsfield/RL-Adventure/blob/master/7.rainbow%20dqn.ipynb
@@ -301,7 +551,7 @@ def projection_distribution(next_state, rewards, dones):
 # Computing Temporal Difference Loss:
 
 def compute_td_loss(batch_size):
-    state, action, reward, next_state, done = replay_buffer.sample(batch_size)
+    state, action, reward, next_state, done, _, _ = replay_buffer.sample(batch_size,1)
 
     state = Variable(torch.FloatTensor(np.float32(state)))
     next_state = Variable(torch.FloatTensor(np.float32(next_state)))#, volatile=True)
@@ -318,9 +568,9 @@ def compute_td_loss(batch_size):
     loss = -(Variable(proj_dist) * dist.log()).sum(1)
     loss = loss.mean()
 
-    optimiser.zero_grad()
+    optimizer.zero_grad()
     loss.backward()
-    optimiser.step()
+    optimizer.step()
 
     current_model.reset_noise()
     target_model.reset_noise()
@@ -587,31 +837,11 @@ gamma         = 0.99 #0.98 # 0.99 in Rainbow
 buffer_limit  = 100000 #50000 # 10000 in Rainbow
 batch_size    = 32 # 32 in Rainbow
 video_every   = 25
-print_every   = 5
-
-#env_id = 'CartPole-v0'
-env_id = 'PongNoFrameskip-v4'
-env = make_atari(env_id)
-env = wrap_deepmind(env)
-env = wrap_pytorch(env)
+print_every   = 10
 
 num_atoms = 51
 Vmin = -10
 Vmax = 10
-
-current_model = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
-target_model = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
-
-if USE_CUDA:
-    current_model = current_model.cuda()
-    target_model = target_model.cuda()
-
-optimiser = optim.Adam(current_model.parameters(), lr=learning_rate)
-update_target(current_model, target_model)
-
-replay_initial = 10000
-replay_buffer = ReplayBuffer(buffer_limit)
-
 
 # Training:
 
@@ -620,32 +850,6 @@ num_frames = 1000000
 losses = []
 all_rewards = []
 episode_reward = 0
-
-state = env.reset()
-for frame_idx in range(1, num_frames+1):
-    action = current_model.act(state)
-
-    next_state, reward, done, _ = env.step(action)
-    replay_buffer.push(state, action, reward, next_state, done)
-
-    state = next_state
-    episode_reward += reward
-
-    if done:
-        state = env.reset()
-        all_rewards.append(episode_reward)
-        episode_reward = 0
-
-    if len(replay_buffer) > replay_initial:
-        loss = compute_td_loss(batch_size)
-        losses.append(loss.data)
-
-    if frame_idx % 10000 == 0:
-        plot(frame_idx, all_rewards, losses)
-
-    if frame_idx % 1000 == 0:
-        update_target(current_model, target_model)
-
 
 '''
 def train(q, q_target, memory, optimizer):
@@ -663,18 +867,17 @@ def train(q, q_target, memory, optimizer):
         optimizer.step()
 '''
 
-"""**Train**
-
-← You can download the videos from the videos folder in the files on the left
-"""
-
 # setup the Gravitar ram environment, and record a video every 50 episodes. You can use the non-ram version here if you prefer
 # Gravitar-ram-v0
 # Gravitar-v0
-
+#env = gym.make('PongNoFrameskip-v4')
+env_id = 'GravitarNoFrameskip-v0'
+env = make_atari(env_id)
+env = wrap_deepmind(env)
+env = wrap_pytorch(env)
 #env = gym.make('Gravitar-ram-v0')
 #env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
-'''
+
 # reproducible environment and action spaces, do not change lines 6-11 here (tools > settings > editor > show line numbers)
 seed = 742
 torch.manual_seed(seed)
@@ -683,35 +886,48 @@ random.seed(seed)
 np.random.seed(seed)
 env.action_space.seed(seed)
 
-q = RainbowDQN()
-q_target = RainbowDQN()
-q_target.load_state_dict(q.state_dict())
-memory = ReplayBuffer()
 
-score    = 0.0
+current_model = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
+target_model = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
+if USE_CUDA:
+    current_model = current_model.cuda()
+    target_model = target_model.cuda()
+optimizer = optim.Adam(current_model.parameters(), lr=learning_rate)
+update_target(current_model, target_model)
+
+replay_initial = 10000
+replay_buffer = PrioritizedReplayBuffer(buffer_limit,1)
+
+score    = 0
 marking  = []
-optimizer = optim.Adam(q.parameters(), lr=learning_rate)
+state = env.reset()
+for n_episode in range(1,num_frames+1):#int(1e32)):
+    #epsilon = max(0.01, 0.08 - 0.01*(n_episode/200)) # linear annealing from 8% to 1%
+    #s = env.reset()
+    #done = False
+    #score = 0.0
 
-for n_episode in range(int(1e32)):
-    epsilon = max(0.01, 0.08 - 0.01*(n_episode/200)) # linear annealing from 8% to 1%
-    s = env.reset()
-    done = False
-    score = 0.0
+    #while True:
 
-    while True:
+    #a = q.sample_action(torch.from_numpy(s).float().unsqueeze(0), epsilon)
+    action = current_model.act(state)
+    next_state, reward, done, _ = env.step(action)
+    done_mask = 0.0 if done else 1.0
+    #memory.put((s,a,r/100.0,s_prime, done_mask))
+    replay_buffer.push(state, action, reward, next_state, done_mask)
+    state = next_state
 
-        a = q.sample_action(torch.from_numpy(s).float().unsqueeze(0), epsilon)
-        s_prime, r, done, info = env.step(a)
-        done_mask = 0.0 if done else 1.0
-        memory.put((s,a,r/100.0,s_prime, done_mask))
-        s = s_prime
+    score += reward
+    if done:
+        state = env.reset()
+        score = 0
 
-        score += r
-        if done:
-            break
-        
-    if memory.size()>2000:
-        train(q, q_target, memory, optimizer)
+    if replay_buffer.__len__()>2000:
+        compute_td_loss(batch_size)
+        #train(q, q_target, memory, optimizer)
+    
+    if n_episode % 1000 == 0:
+        update_target(current_model, target_model)
 
     # do not change lines 44-48 here, they are for marking the submission log
     marking.append(score)
@@ -722,8 +938,8 @@ for n_episode in range(int(1e32)):
 
     # you can change this part, and print any data you like (so long as it doesn't start with "marking")
     if n_episode%print_every==0 and n_episode!=0:
-        q_target.load_state_dict(q.state_dict())
-        print("episode: {}, score: {:.1f}, epsilon: {:.2f}".format(n_episode, score, epsilon))
+        #update_target(current_model, target_model)
+        print("episode: {}, score: {:.1f}".format(n_episode, score))
 
 # for coursework, assemble list of different techniques I can use and how they would fit together
 # e.g. Dyna-Q, based on regular Q-learning but with additional inner loop simulation of environment
@@ -747,4 +963,3 @@ for n_episode in range(int(1e32)):
 # approach overly complex papers more like an engineer
 # run the code and dismantle it back down to the concepts that make it work
 # lower variance can really help with lowering training times for iteration
-'''
