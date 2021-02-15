@@ -1,5 +1,8 @@
-dl/cifar10
+dl/cifar10*
+*cifar-10*
+dl/stl10*
 dl/drive
+dl/data
 dl/*.aux
 dl/*.bbl
 dl/*.bcf

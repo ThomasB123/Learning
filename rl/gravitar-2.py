@@ -1,7 +1,11 @@
+
 # this is a Deep Q Learning (DQN) agent including replay memory and a target network 
 # you can write a brief 8-10 line abstract detailing your submission and experiments here
 # the code is based on https://github.com/seungeunrho/minimalRL/blob/master/dqn.py, which is released under the MIT licesne
 # make sure you reference any code you have studied as above, with one comment line per reference
+
+# this code is based on https://github.com/higgsfield/RL-Adventure
+# this code is based on https://github.com/higgsfield/RL-Adventure/blob/master/1.dqn.ipynb
 
 # imports
 import math

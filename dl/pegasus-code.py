@@ -1,7 +1,7 @@
 
 # pegasus
 
-# this code is based on [ref], which is released under the MIT licesne
+# this code is based on [ref], which is released under the MIT license
 # make sure you reference any code you have studied as above here
 
 # imports
@@ -54,12 +54,26 @@ if dataset == 'stl10':
 train_iterator = iter(cycle(train_loader))
 
 # let's view some of the training data
-plt.rcParams['figure.dpi'] = 175
-x,t = next(train_iterator)
-x,t = x.to(device), t.to(device)
-plt.grid(False)
-plt.imshow(torchvision.utils.make_grid(x).cpu().data.permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
-plt.show()
+'''
+plt.figure(figsize=(10,10))
+for i in range(25):
+    plt.subplot(5,5,i+1)
+    plt.xticks([])
+    plt.yticks([])
+    plt.grid(False)
+    if n_channels == 1:
+        plt.imshow(train_loader.dataset[i][0].repeat(3,1,1).permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
+    else:
+        plt.imshow(train_loader.dataset[i][0].permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
+    plt.xlabel(class_names[train_loader.dataset[i][1]])
+'''
+#plt.rcParams['figure.dpi'] = 175
+#x,t = next(train_iterator) # x = images, t = labels
+#x,t = x.to(device), t.to(device)
+#plt.grid(False)
+#plt.imshow(torchvision.utils.make_grid(x).cpu().data.permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
+#print(''.join('%5s'%class_names[t[j]] for j in range(batch_size)))
+#plt.show()
 
 """**Define a simple convolutional autoencoder**"""
 
@@ -147,9 +161,10 @@ while (epoch<10):
 
     # plot some examples
     print('loss ' + str(loss.mean()))
-    plt.rcParams['figure.dpi'] = 100
+    #plt.rcParams['figure.dpi'] = 100
     plt.grid(False)
-    plt.imshow(torchvision.utils.make_grid(g[:8]).cpu().data.permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
+    #plt.imshow(torchvision.utils.make_grid(g[:8]).cpu().data.permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
+    plt.imshow(torchvision.utils.make_grid(g).cpu().data.permute(0,2,1).contiguous().permute(2,1,0), cmap=plt.cm.binary)
     plt.show()
     plt.pause(0.0001)
 
