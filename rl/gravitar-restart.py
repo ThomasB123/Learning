@@ -19,13 +19,13 @@ import torch.optim as optim
 #import operator
 #from collections import deque
 import cv2
-#cv2.ocl.setUseOpenCL(False)
+cv2.ocl.setUseOpenCL(False)
 
 
 # hyperparameters
 learning_rate = 0.0005
 gamma         = 0.98
-buffer_limit  = 10000
+buffer_limit  = 2000
 batch_size    = 32
 video_every   = 25
 print_every   = 5
@@ -162,11 +162,11 @@ class RainbowCnnDQN(nn.Module):
         self.Vmax         = Vmax
         
         self.features = nn.Sequential(
-            nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
+            nn.Conv2d(np.array(env.observation_space.shape).prod(), 32, kernel_size=8, stride=4),
             nn.ReLU(),
             nn.Conv2d(32, 64, kernel_size=4, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.Conv2d(64, env.action_space.n, kernel_size=3, stride=1),
             nn.ReLU()
         )
         
@@ -425,12 +425,12 @@ class ImageToPyTorch(gym.ObservationWrapper):
         return np.swapaxes(observation, 2, 0)
 
 
-env = gym.make('Gravitar-v0')
+env = gym.make('Gravitar-ram-v0')
 env = NoopResetEnv(env, noop_max=30)
-env = MaxAndSkipEnv(env, skip=4)
-env = EpisodicLifeEnv(env)
+#env = MaxAndSkipEnv(env, skip=4)
+#env = EpisodicLifeEnv(env)
 #if 'FIRE' in env.unwrapped.get_action_meanings():
-env = FireResetEnv(env)
+#env = FireResetEnv(env)
 env = WarpFrame(env)
 #env = ClipRewardEnv(env)
 env = ImageToPyTorch(env)
@@ -453,33 +453,36 @@ memory = ReplayBuffer(buffer_limit)
 score    = 0.0
 marking  = []
 
-s = env.reset()
-for n_episode in range(int(1e32)):
+#s = env.reset()
+for n_episode in range(num_frames):
     epsilon = max(0.01, 0.08 - 0.01*(n_episode/200)) # linear annealing from 8% to 1%
-    #s = env.reset()
-    #done = False
-    #score = 0.0
+    s = env.reset()
+    done = False
+    score = 0.0
     #a = q.sample_action(torch.from_numpy(s).float().unsqueeze(0), epsilon)
-    a = q.sample_action(s, epsilon)
     
-    s_prime, r, done, _ = env.step(a)
-    #s_prime, r, done, info = env.step(a)
-    #done_mask = 0.0 if done else 1.0
-    #memory.put((s,a,r/100.0,s_prime, done_mask))
-    memory.push(s, a, r, s_prime, done)
-    s = s_prime
-    score += r
+    while True:
+        a = q.sample_action(s, epsilon)
+    
+        s_prime, r, done, _ = env.step(a)
+        #s_prime, r, done, info = env.step(a)
+        done_mask = 0.0 if done else 1.0
+        #memory.put((s,a,r/100.0,s_prime, done_mask))
+        memory.push(s, a, r/100.0, s_prime, done_mask)
+        s = s_prime
+        score += r
 
-    if done:
-        s = env.reset()
-        score = 0.0
+        if done:
+            break
+            s = env.reset()
+            score = 0.0
         
     if memory.size()>replay_initial:
         train(batch_size)
         #train(q, q_target, memory, optimizer)
     
-    if n_episode % 1000 == 0:
-        q_target.load_state_dict(q.state_dict())
+    #if n_episode % 1000 == 0:
+    #    q_target.load_state_dict(q.state_dict())
 
     # do not change lines 44-48 here, they are for marking the submission log
     marking.append(score)
@@ -490,4 +493,5 @@ for n_episode in range(int(1e32)):
 
     # you can change this part, and print any data you like (so long as it doesn't start with "marking")
     if n_episode%print_every==0 and n_episode!=0:
+        q_target.load_state_dict(q.state_dict())
         print("episode: {}, score: {:.1f}, epsilon: {:.2f}".format(n_episode, score, epsilon))
