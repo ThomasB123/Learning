@@ -65,9 +65,7 @@ class ReplayBuffer():
             s_prime_lst.append(s_prime)
             done_mask_lst.append([done_mask])
 
-        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), \
-               torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), \
-               torch.tensor(done_mask_lst)
+        return torch.tensor(s_lst, dtype=torch.float), torch.tensor(a_lst), torch.tensor(r_lst), torch.tensor(s_prime_lst, dtype=torch.float), torch.tensor(done_mask_lst)
     
     def size(self):
         return len(self.buffer)
@@ -76,36 +74,41 @@ class ReplayBuffer():
 # code adapted from https://github.com/higgsfield/RL-Adventure/blob/master/7.rainbow%20dqn.ipynb
 
 class RainbowCnnDQN(nn.Module):
-    def __init__(self):#, input_shape, num_actions, num_atoms, Vmin, Vmax):
+    def __init__(self, input_shape, num_actions, num_atoms, Vmin, Vmax):
         super(RainbowCnnDQN, self).__init__()
 
-        #self.input_shape = input_shape
-        #self.num_actions = num_actions
-        #self.num_atoms = num_atoms
-        #self.Vmin = Vmin
-        #self.Vmax = Vmax
+        self.input_shape = input_shape
+        self.num_actions = num_actions
+        self.num_atoms = num_atoms
+        self.Vmin = Vmin
+        self.Vmax = Vmax
 
-        #self.features = nn.Sequential(
-        #    nn.Conv2d(input_shape[0], 32, kernel_size=8, stride=4),
-        #    nn.ReLU(),
-        #    nn.Conv2d(32, 64, kernel_size=4, stride=2),
-        #    nn.ReLU(),
-        #    nn.Conv2d(64, 64, kernel_size=3, stride=1),
-        #    nn.ReLU()
-        #)
+        self.features = nn.Sequential(
+            nn.Conv2d(np.array(env.observation_space.shape).prod(), 32, kernel_size=8, stride=4),
+            nn.ReLU(),
+            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.ReLU(),
+            nn.Conv2d(64, env.action_space.n, kernel_size=3, stride=1),
+            nn.ReLU()
+        )
+        self.fc1 = nn.Linear(np.array(env.observation_space.shape).prod(), 32)#, kernel_size=8, stride=4)
+        self.fc2 = nn.Linear(32, 64)#, kernel_size=4, stride=2)
+        self.fc3 = nn.Linear(64, env.action_space.n)#, kernel_size=3, stride=1)
 
         #self.noisy_value1 = NoisyLinear(self.feature_size(), 512, use_cuda=USE_CUDA)
         #self.noisy_value2 = NoisyLinear(512, self.num_atoms, use_cuda=USE_CUDA)
 
         #self.noisy_advantage1 = NoisyLinear(self.feature_size(), 512, use_cuda=USE_CUDA)
         #self.noisy_advantage2 = NoisyLinear(512, self.num_atoms * self.num_actions, use_cuda=USE_CUDA)
-        
+        '''
         self.fc1 = nn.Linear(np.array(env.observation_space.shape).prod(), 256) # was here before
         self.fc2 = nn.Linear(256, 84)
         self.fc3 = nn.Linear(84, env.action_space.n)
+        '''
 
     def forward(self, x):
         #batch_size = x.size(0)
+
         #x = x / 255.
         #x = self.features(x)
         #x = x.view(batch_size, -1)
@@ -121,11 +124,13 @@ class RainbowCnnDQN(nn.Module):
 
         #x = value + advantage - advantage.mean(1, keepdim=True)
         #x = F.softmax(x.view(-1, self.num_atoms)).view(-1, self.num_actions, self.num_atoms)
-
+        
         x = x.view(x.size(0),-1)
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
         x = self.fc3(x)
+        
+        
         return x
     
     #def reset_noise(self):
@@ -242,8 +247,7 @@ episode_reward = 0
 # setup the Gravitar ram environment, and record a video every 50 episodes. You can use the non-ram version here if you prefer
 # Gravitar-ram-v0
 # Gravitar-v0
-env_id = 'Gravitar-v0'
-env = gym.make('Gravitar-ram-v0')
+env = gym.make('PongNoFrameskip-v4')
 env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
 
 # reproducible environment and action spaces, do not change lines 6-11 here (tools > settings > editor > show line numbers)
@@ -254,8 +258,8 @@ random.seed(seed)
 np.random.seed(seed)
 env.action_space.seed(seed)
 
-q = RainbowCnnDQN()#env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
-q_target = RainbowCnnDQN()#env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
+q = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
+q_target = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
 q_target.load_state_dict(q.state_dict())
 memory = ReplayBuffer()
 
@@ -295,7 +299,7 @@ for n_episode in range(int(1e32)):
         if done:
             break
 
-    if memory.size()>2000:
+    if memory.size()>80000:
         train(q, q_target, memory, optimizer)
     
     if n_episode % 1000 == 0:
