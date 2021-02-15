@@ -425,7 +425,7 @@ class ImageToPyTorch(gym.ObservationWrapper):
         return np.swapaxes(observation, 2, 0)
 
 
-env = gym.make('Gravitar-ram-v0')
+env = gym.make('Gravitar-v0')
 env = NoopResetEnv(env, noop_max=30)
 #env = MaxAndSkipEnv(env, skip=4)
 #env = EpisodicLifeEnv(env)
