@@ -1,7 +1,6 @@
 
-
-
-import math, random
+import math
+import random
 
 import gym
 import numpy as np
@@ -12,15 +11,14 @@ import torch.optim as optim
 import torch.autograd as autograd 
 import torch.nn.functional as F
 
-
 from IPython.display import clear_output
 import matplotlib.pyplot as plt
+import operator
 
-
-import math
-import torch
-import torch.nn as nn
-import torch.nn.functional as F
+from collections import deque
+from gym import spaces
+import cv2
+cv2.ocl.setUseOpenCL(False)
 
 class NoisyLinear(nn.Module):
     def __init__(self, in_features, out_features, std_init=0.4):
@@ -74,12 +72,6 @@ class NoisyLinear(nn.Module):
         x = torch.randn(size)
         x = x.sign().mul(x.abs().sqrt())
         return x
-
-import numpy as np
-import random
-
-import operator
-
 
 class SegmentTree(object):
     def __init__(self, capacity, operation, neutral_element):
@@ -163,7 +155,6 @@ class SegmentTree(object):
         assert 0 <= idx < self._capacity
         return self._value[self._capacity + idx]
 
-
 class SumSegmentTree(SegmentTree):
     def __init__(self, capacity):
         super(SumSegmentTree, self).__init__(
@@ -201,7 +192,6 @@ class SumSegmentTree(SegmentTree):
                 idx = 2 * idx + 1
         return idx - self._capacity
 
-
 class MinSegmentTree(SegmentTree):
     def __init__(self, capacity):
         super(MinSegmentTree, self).__init__(
@@ -214,7 +204,6 @@ class MinSegmentTree(SegmentTree):
         """Returns min(arr[start], ...,  arr[end])"""
 
         return super(MinSegmentTree, self).reduce(start, end)
-
 
 class ReplayBuffer(object):
     def __init__(self, size):
@@ -275,7 +264,6 @@ class ReplayBuffer(object):
         """
         idxes = [random.randint(0, len(self._storage) - 1) for _ in range(batch_size)]
         return self._encode_sample(idxes)
-
 
 class PrioritizedReplayBuffer(ReplayBuffer):
     def __init__(self, size, alpha):
@@ -390,10 +378,8 @@ class PrioritizedReplayBuffer(ReplayBuffer):
 
             self._max_priority = max(self._max_priority, priority)
 
-
 def update_target(current_model, target_model):
     target_model.load_state_dict(current_model.state_dict())
-
 
 def projection_distribution(next_state, rewards, dones):
     batch_size  = next_state.size(0)
@@ -425,7 +411,6 @@ def projection_distribution(next_state, rewards, dones):
         
     return proj_dist
 
-
 def compute_td_loss(batch_size):
     state, action, reward, next_state, done = replay_buffer.sample(batch_size) 
 
@@ -453,7 +438,6 @@ def compute_td_loss(batch_size):
     
     return loss
 
-
 def plot(frame_idx, rewards, losses):
     clear_output(True)
     plt.figure(figsize=(20,5))
@@ -464,14 +448,6 @@ def plot(frame_idx, rewards, losses):
     plt.title('loss')
     plt.plot(losses)
     plt.show()
-
-
-import numpy as np
-from collections import deque
-import gym
-from gym import spaces
-import cv2
-cv2.ocl.setUseOpenCL(False)
 
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
@@ -677,7 +653,6 @@ class LazyFrames(object):
     def __getitem__(self, i):
         return self._force()[i]
 
-
 class ImageToPyTorch(gym.ObservationWrapper):
     """
     Image shape to num_channels x weight x height
@@ -689,9 +664,6 @@ class ImageToPyTorch(gym.ObservationWrapper):
 
     def observation(self, observation):
         return np.swapaxes(observation, 2, 0)
-    
-
-
 
 class RainbowCnnDQN(nn.Module):
     def __init__(self, input_shape, num_actions, num_atoms, Vmin, Vmax):
@@ -735,7 +707,7 @@ class RainbowCnnDQN(nn.Module):
         advantage = advantage.view(batch_size, self.num_actions, self.num_atoms)
         
         x = value + advantage - advantage.mean(1, keepdim=True)
-        x = F.softmax(x.view(-1, self.num_atoms)).view(-1, self.num_actions, self.num_atoms)
+        x = F.softmax(x.view(-1, self.num_atoms), dim=-1).view(-1, self.num_actions, self.num_atoms)
         
         return x
         
@@ -755,23 +727,35 @@ class RainbowCnnDQN(nn.Module):
         action = dist.sum(2).max(1)[1].numpy()[0]
         return action
 
-env_id = "GravitarNoFrameskip-v4"
+
+print_every = 5
+video_every = 25
+
+env_id = "Gravitar-v0"
 env = gym.make(env_id)
-assert 'NoFrameskip' in env.spec.id
+#assert 'NoFrameskip' in env.spec.id
 env = NoopResetEnv(env, noop_max=30)
 env = MaxAndSkipEnv(env, skip=4)
 #Configure environment for DeepMind-style Atari.
 env = EpisodicLifeEnv(env)
 if 'FIRE' in env.unwrapped.get_action_meanings():
-    print('hi')
     env = FireResetEnv(env)
 env = WarpFrame(env)
 env = ClipRewardEnv(env)
 env = ImageToPyTorch(env)
+env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
 
 num_atoms = 51
 Vmin = -10
 Vmax = 10
+
+# reproducible environment and action spaces, do not change lines 6-11 here (tools > settings > editor > show line numbers)
+seed = 742
+torch.manual_seed(seed)
+env.seed(seed)
+random.seed(seed)
+np.random.seed(seed)
+env.action_space.seed(seed)
 
 current_model = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
 target_model  = RainbowCnnDQN(env.observation_space.shape, env.action_space.n, num_atoms, Vmin, Vmax)
@@ -788,30 +772,41 @@ gamma      = 0.99
 
 losses = []
 all_rewards = []
-episode_reward = 0
+score = 0
+marking = []
 
 state = env.reset()
-for frame_idx in range(1, num_frames + 1):
+for n_episode in range(1, num_frames + 1):
     action = current_model.act(state)
     
     next_state, reward, done, _ = env.step(action)
     replay_buffer.push(state, action, reward, next_state, done)
     
     state = next_state
-    episode_reward += reward
+    score += reward
     
     if done:
         state = env.reset()
-        all_rewards.append(episode_reward)
-        episode_reward = 0
+        all_rewards.append(score)
+        score = 0
         
     if len(replay_buffer) > replay_initial:
         loss = compute_td_loss(batch_size)
         losses.append(loss.data)#[0])
         
-    if frame_idx % 10000 == 0:
-        plot(frame_idx, all_rewards, losses)
+    #if n_episode % 10000 == 0:
+        #plot(n_episode, all_rewards, losses)
         
-    if frame_idx % 1000 == 0:
+    if n_episode % 1000 == 0:
         update_target(current_model, target_model)
+    
+    # do not change lines 44-48 here, they are for marking the submission log
+    marking.append(score)
+    if n_episode%100 == 0:
+        print("marking, episode: {}, score: {:.1f}, mean_score: {:.2f}, std_score: {:.2f}".format(n_episode, score, np.array(marking).mean(), np.array(marking).std()))
+        marking = []
 
+    # you can change this part, and print any data you like (so long as it doesn't start with "marking")
+    if n_episode%print_every==0 and n_episode!=0:
+        update_target(current_model, target_model)
+        print("episode: {}, score: {:.1f}".format(n_episode, score))
