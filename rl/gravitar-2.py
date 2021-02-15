@@ -12,7 +12,6 @@ import torch.autograd as autograd
 import torch.nn.functional as F
 
 from IPython.display import clear_output
-import matplotlib.pyplot as plt
 import operator
 
 from collections import deque
@@ -438,17 +437,6 @@ def compute_td_loss(batch_size):
     
     return loss
 
-def plot(frame_idx, rewards, losses):
-    clear_output(True)
-    plt.figure(figsize=(20,5))
-    plt.subplot(131)
-    plt.title('frame %s. reward: %s' % (frame_idx, np.mean(rewards[-10:])))
-    plt.plot(rewards)
-    plt.subplot(132)
-    plt.title('loss')
-    plt.plot(losses)
-    plt.show()
-
 class NoopResetEnv(gym.Wrapper):
     def __init__(self, env, noop_max=30):
         """Sample initial states by taking random number of no-ops on reset.
@@ -733,10 +721,8 @@ video_every = 25
 
 env_id = "Gravitar-v0"
 env = gym.make(env_id)
-#assert 'NoFrameskip' in env.spec.id
 env = NoopResetEnv(env, noop_max=30)
 env = MaxAndSkipEnv(env, skip=4)
-#Configure environment for DeepMind-style Atari.
 env = EpisodicLifeEnv(env)
 if 'FIRE' in env.unwrapped.get_action_meanings():
     env = FireResetEnv(env)
@@ -772,7 +758,7 @@ gamma      = 0.99
 
 losses = []
 all_rewards = []
-score = 0
+score = 0.0
 marking = []
 
 state = env.reset()
@@ -788,14 +774,11 @@ for n_episode in range(1, num_frames + 1):
     if done:
         state = env.reset()
         all_rewards.append(score)
-        score = 0
+        score = 0.0
         
     if len(replay_buffer) > replay_initial:
         loss = compute_td_loss(batch_size)
         losses.append(loss.data)#[0])
-        
-    #if n_episode % 10000 == 0:
-        #plot(n_episode, all_rewards, losses)
         
     if n_episode % 1000 == 0:
         update_target(current_model, target_model)
@@ -808,5 +791,5 @@ for n_episode in range(1, num_frames + 1):
 
     # you can change this part, and print any data you like (so long as it doesn't start with "marking")
     if n_episode%print_every==0 and n_episode!=0:
-        update_target(current_model, target_model)
+        #update_target(current_model, target_model)
         print("episode: {}, score: {:.1f}".format(n_episode, score))
