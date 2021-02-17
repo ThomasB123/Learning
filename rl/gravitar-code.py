@@ -247,7 +247,7 @@ episode_reward = 0
 # setup the Gravitar ram environment, and record a video every 50 episodes. You can use the non-ram version here if you prefer
 # Gravitar-ram-v0
 # Gravitar-v0
-env = gym.make('PongNoFrameskip-v4')
+env = gym.make('Gravitar-ram-v0')
 env = gym.wrappers.Monitor(env, "./video", video_callable=lambda episode_id: (episode_id%video_every)==0,force=True)
 
 # reproducible environment and action spaces, do not change lines 6-11 here (tools > settings > editor > show line numbers)

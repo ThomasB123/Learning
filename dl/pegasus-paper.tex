@@ -19,7 +19,11 @@
 \begin{document}
 \maketitle
 \begin{abstract}
-    This paper proposes using an autoencoder to generate images that look like a Pegasus. This abstract should be short and concise, about 8-10 lines long.
+    This paper proposes using an autoencoder to generate images that look like a Pegasus. 
+    I train an autoencoder, and condition it on birds and horses, identified by the annotated class labels for each image. 
+    This gives two latent codes via the encoder network which I linearly interpolate between to give the final outputs 
+    via the decoder network. 
+    This abstract should be short and concise, about 8-10 lines long.
 \end{abstract}
 
 % this is where the sections begin
@@ -45,10 +49,12 @@ From this batch, the most Pegasus-like image (with quite a stretch of the imagin
 \end{center}
 
 \section{Limitations}
-It's very difficult to see anything that looks like a Pegasus. In the future, this could be improved by training for more than 10 epochs, although this was not possible due to the time constraints.
+It's very difficult to see anything that looks like a Pegasus. 
+In the future, this could be improved by training for more than 10 epochs, 
+although this was not possible due to the time constraints.
 
 \section*{Bonuses}
-This submission has a total bonus of -4 marks (a penalty), as it is trained only on CIFAR-10, and the Pegasus has a dark body colour.
+This submission has a total bonus of +3 marks (a penalty), as it is trained with STL-10 at the full 96x96 pixels, and the Pegasus has a dark body colour.
 
 % you can have an unlimited number of references (they can go on the 5th page and span many additional pages without any penalty)
 \printbibliography
