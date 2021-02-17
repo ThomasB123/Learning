@@ -32,11 +32,20 @@ The method is to train an autoencoder~\cite{kramer1991nonlinear}, by minimising 
 \begin{equation}
     \mathcal{L}_{\textrm{AE}} = \mathbb{E}_{\vx\sim p_{\textrm{data}}}[\, \lVert \vx - D(E(\vx)) \rVert^2 ]
 \end{equation}
-The methodology should be very concise and the mathematical notation should try to follow \href{https://v1.overleaf.com/latex/templates/template-for-iclr-2021-conference-submission/mmpfhsxmqdkp.pdf}{the ICLR conference guidlines \faExternalLink}. If you are not familiar with \LaTeX, you can use \href{https://www.codecogs.com/latex/eqneditor.php}{this online \LaTeX~equation editor \faExternalLink}. You may want to include an architectural diagram:
+The encoder function $E : \mathbb{R}^n \rightarrow\mathbb{R}^m$ compresses the dimensionality of the data $n << m$ to a latent encoding 
+$z = E(x)$, which is then recovered by the decoder $D: \mathbb{R}^m \rightarrow \mathbb{R}^n$, where $\hat{x} = D(z)$. 
+
+The autoencoder is conditioned on birds and horses which are identified by the annotated class labels available for the images. 
+This gives two latent codes via the encoder network which are linearly interpolated between to give the final outputs via the decoder network. 
+
+I use 3 channels and a latent size of 512 and a learning rate of 0.001 in the optimiser with 20 epochs.
+
+The autoencoder can be visualised as below: 
 \begin{center}
     \includegraphics[width=0.5\textwidth]{figures/architecture.pdf}
 \end{center}
-The architectural diagram above was created using Inkscape and exported to a PDF. This was then uploaded to the figures directory on the left.
+Where the neural network is trained to predict its inputs, thus learning an identity which it can reproduce as its output. 
+The architectural diagram above was created using Inkscape and exported to a PDF. 
 
 \section{Results}
 The results look very blurry, where the best batch of images looks like this:
@@ -54,7 +63,7 @@ In the future, this could be improved by training for more than 10 epochs,
 although this was not possible due to the time constraints.
 
 \section*{Bonuses}
-This submission has a total bonus of +3 marks (a penalty), as it is trained with STL-10 at the full 96x96 pixels, and the Pegasus has a dark body colour.
+This submission has a total bonus of +3 marks, as it is trained with STL-10 at the full 96x96 pixels, and the Pegasus has a dark body colour.
 
 % you can have an unlimited number of references (they can go on the 5th page and span many additional pages without any penalty)
 \printbibliography
