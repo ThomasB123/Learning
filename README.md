@@ -58,19 +58,20 @@ The paper will be marked as follows:
 - [20 marks] Scientific quality and mathematical rigor for the paper and solution
   - Communication, application, and presentation of the underpinning mathematical theory
   - Architectural design, sophistication, appropriateness, and novelty
-  – Clarity, simplicity and frugality of both the scientific writing and the implementation
+  - Clarity, simplicity and frugality of both the scientific writing and the implementation
   
 - [10 marks] Recognisability of the single best output
-  – Can I tell this is an image of a Pegasus?
-  – How much do I need to stretch my imagination to see a winged horse?
+  - Can I tell this is an image of a Pegasus?
+  - How much do I need to stretch my imagination to see a winged horse?
   
 - [10 marks] Realism of the sampled batch of model outputs
-  – Are the generated images blurry?
-  – Do the objects in them have realistic shapes or textures? Do they look real?
+  - Are the generated images blurry?
+  - Do the objects in them have realistic shapes or textures? Do they look real?
   
 - [10 marks] Uniqueness of the sampled batch of model outputs
-  – How different are the images from their nearest neighbours in the dataset? – How diverse are the samples within the batch of 64 provided?
-  – Do all the winged horses look the same? Is there any mode collapse?
+  - How different are the images from their nearest neighbours in the dataset?
+  - How diverse are the samples within the batch of 64 provided?
+  - Do all the winged horses look the same? Is there any mode collapse?
 
 
 ## Part 2: Gravitar
