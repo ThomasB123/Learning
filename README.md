@@ -1,6 +1,3 @@
-# Learning
-Year 3 Coursework
-
 ## The Mythical Pegasus and Gravitar
 
 Deep Learning and Reinforcement Learning Summative Assignment Michaelmas Term, 2020
@@ -59,8 +56,8 @@ Figure 1: Generating a realistic and recognisable Pegasus is very difficult with
 The paper will be marked as follows:
 
 - [20 marks] Scientific quality and mathematical rigor for the paper and solution
-  – Communication, application, and presentation of the underpinning mathematical theory
-  – Architectural design, sophistication, appropriateness, and novelty
+  - Communication, application, and presentation of the underpinning mathematical theory
+  - Architectural design, sophistication, appropriateness, and novelty
   – Clarity, simplicity and frugality of both the scientific writing and the implementation
   
 - [10 marks] Recognisability of the single best output
@@ -76,39 +73,66 @@ The paper will be marked as follows:
   – Do all the winged horses look the same? Is there any mode collapse?
 
 
- Part 2: Gravitar
+## Part 2: Gravitar
+
 Gravitar is a notoriously difficult Atari 2600 game, with complex controls and changing environments where you always have to navigate away from gravity. This is what the beautiful Atari 2600 console looked like, which was released in 1977. It had an 8-bit 1.19 MHz CPU with just 128 bytes of RAM!
-Figure 2: Atari 2600 console Figure 3: Gravitar cartridge
+
+Figure 2: Atari 2600 console
+
+Figure 3: Gravitar cartridge
+
 I recommend that before you begin, you have a go at playing Gravitar online to understand the game mechanics. Try to visit a couple of planets and use the tractor beam (down key) to pick up some more fuel. My score is 7,250 - can you do any better?
-W [Play Gravitar with an online Atari 2600 emulator] spacebar to start/fire and move with arrow keys W [More information, including the full manual and cartridge images]
-     Task
+
+[Play Gravitar with an online Atari 2600 emulator] spacebar to start/fire and move with arrow keys
+
+[More information, including the full manual and cartridge images]
+
+## Task
+
 Your task is to build and train a deep reinforcement learning agent to obtain the highest score possible, using the provided starter code linked on the first page. OpenAI gym provides two Gravitar environments ‘Gravitar-ram-v0’ and ‘Gravitar-v0’ respectively. You can use either of them, but pay attention to the size of the input array shapes as documented W here and W here.
+
 You can use any reinforcement learning algorithm that you like, including ones not covered in the lectures.
-Submission
-The following figure explains how and what to submit. You can print whatever data you like into the log, but you must keep the string which starts with ‘marking’. This string prints the mean and standard devi- ation of the score over every 100 episodes. You must not change this. The submitted video should show the highest score that you are able to successfully record. Recording a video is quite slow, so you may wish
-3
 
- to do it every 25 or more episodes. Increasing this interval may slightly improve training performance, but you may miss recording a good episode.
+## Submission
+
+The following figure explains how and what to submit. You can print whatever data you like into the log, but you must keep the string which starts with ‘marking’. This string prints the mean and standard devi- ation of the score over every 100 episodes. You must not change this. The submitted video should show the highest score that you are able to successfully record. Recording a video is quite slow, so you may wish to do it every 25 or more episodes. Increasing this interval may slightly improve training performance, but you may miss recording a good episode.
+
 This is the best episode with a recorded video
-Therefore download episode 250 and rename it Make sure these lines are printed gravitar-video-episode-250-score-700.mp4 Copy the full log to gravitar-log.txt
-The code submission must be written with clarity and minimalism. You can submit an .ipynb or .py file. You do not need to follow PEP-8 or any departmental guidelines for code quality with this assignment. Try to keep comments to a minimum, as good code should speak for itself. If you have tried many impressive designs and ideas, you may briefly explain these in a large comment (or text in .ipynb if you prefer) at the bottom of the submission, but do not expect this to significantly influence marking of your final solution.
-Anti-tampering
-There will be statistical analysis of the submitted log files. Any log files with outliers in the convergence behaviour will have their associated code retrained multiple times using SLURM scripts on NCC, learning a distribution over its expected convergence behaviour. If the likelihood of the submitted log data shows evidence of tampering, a departmental investigation will be conducted. If interested, this method for de- tecting tampering is similar to parts of the solution used to solve W Sploosh Kaboom in Zelda Windwaker.
-Marking
-The code, video, and log submission will be marked as follows: • [30 marks] Convergence and score
-– How efficiently does your agent learn?
-– Does it just get lucky after lots and lots of training? – How often does it get a good score?
-• [10 marks] Sophistication and appropriateness of the solution
-– How well have you applied the relevant theory to the problem?
-– How hackish is your implementation, or is it robust and well-designed?
-– Have you just cited and pasted code, or is their evidence of comprehension with further study and novel design extending beyond the lecture materials?
-• [10 marks] Intuition of video
-– Does the video look like the agent is just randomly getting lucky after lots of episodes?
-       4
 
-– Is it chasing and hunting down the enemies efficiently?
-– Is it navigating gravity gracefully, or is it like it’s powered by an infinite improbability drive? – Has it learnt any surprising behaviours?
-PyTorch Training
+Therefore download episode 250 and rename it
+
+Make sure these lines are printed gravitar-video-episode-250-score-700.mp4
+
+Copy the full log to gravitar-log.txt
+
+The code submission must be written with clarity and minimalism. You can submit an .ipynb or .py file. You do not need to follow PEP-8 or any departmental guidelines for code quality with this assignment. Try to keep comments to a minimum, as good code should speak for itself. If you have tried many impressive designs and ideas, you may briefly explain these in a large comment (or text in .ipynb if you prefer) at the bottom of the submission, but do not expect this to significantly influence marking of your final solution.
+
+## Anti-tampering
+
+There will be statistical analysis of the submitted log files. Any log files with outliers in the convergence behaviour will have their associated code retrained multiple times using SLURM scripts on NCC, learning a distribution over its expected convergence behaviour. If the likelihood of the submitted log data shows evidence of tampering, a departmental investigation will be conducted. If interested, this method for de- tecting tampering is similar to parts of the solution used to solve W Sploosh Kaboom in Zelda Windwaker.
+
+## Marking
+
+The code, video, and log submission will be marked as follows:
+
+• [30 marks] Convergence and score
+  – How efficiently does your agent learn?
+  – Does it just get lucky after lots and lots of training? – How often does it get a good score?
+  
+• [10 marks] Sophistication and appropriateness of the solution
+  – How well have you applied the relevant theory to the problem?
+  – How hackish is your implementation, or is it robust and well-designed?
+  – Have you just cited and pasted code, or is their evidence of comprehension with further study and novel design extending beyond the lecture materials?
+  
+• [10 marks] Intuition of video
+  – Does the video look like the agent is just randomly getting lucky after lots of episodes?
+  – Is it chasing and hunting down the enemies efficiently?
+  – Is it navigating gravity gracefully, or is it like it’s powered by an infinite improbability drive? – Has it learnt any surprising behaviours?
+
+## PyTorch Training
+
 This assignment can be completed entirely using Google Colab, or you may wish to register for an ac- count and train on NCC: http://ncc.clients.dur.ac.uk/ (only available on the internal university net- work). Users without remote server experience or job queuing system experience (such as SLURM) are recommended to continue to use Google Colab, which is just as fast for PyTorch training. If using NCC, please carefully read the documentation and respect other users on the job queuing system.
-Closing Comment
+
+## Closing Comment
+
 I hope that you enjoy this coursework. If you are struggling, please join one of the weekly zoom meetings to ask questions and discuss any issues, such as with programming or relevant theory.
