@@ -110,7 +110,7 @@ The code submission must be written with clarity and minimalism. You can submit 
 
 ## Anti-tampering
 
-There will be statistical analysis of the submitted log files. Any log files with outliers in the convergence behaviour will have their associated code retrained multiple times using SLURM scripts on NCC, learning a distribution over its expected convergence behaviour. If the likelihood of the submitted log data shows evidence of tampering, a departmental investigation will be conducted. If interested, this method for de- tecting tampering is similar to parts of the solution used to solve W Sploosh Kaboom in Zelda Windwaker.
+There will be statistical analysis of the submitted log files. Any log files with outliers in the convergence behaviour will have their associated code retrained multiple times using SLURM scripts on NCC, learning a distribution over its expected convergence behaviour. If the likelihood of the submitted log data shows evidence of tampering, a departmental investigation will be conducted. If interested, this method for detecting tampering is similar to parts of the solution used to solve W Sploosh Kaboom in Zelda Windwaker.
 
 ## Marking
 
