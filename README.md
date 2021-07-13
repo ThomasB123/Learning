@@ -139,3 +139,6 @@ This assignment can be completed entirely using Google Colab, or you may wish to
 ## Closing Comment
 
 I hope that you enjoy this coursework. If you are struggling, please join one of the weekly zoom meetings to ask questions and discuss any issues, such as with programming or relevant theory.
+
+
+See `dl-and-rl-assignment.pdf` for full details.
