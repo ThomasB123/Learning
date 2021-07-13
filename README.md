@@ -116,19 +116,21 @@ There will be statistical analysis of the submitted log files. Any log files wit
 
 The code, video, and log submission will be marked as follows:
 
-• [30 marks] Convergence and score
-  – How efficiently does your agent learn?
-  – Does it just get lucky after lots and lots of training? – How often does it get a good score?
+- [30 marks] Convergence and score
+  - How efficiently does your agent learn?
+  - Does it just get lucky after lots and lots of training?
+  - How often does it get a good score?
   
-• [10 marks] Sophistication and appropriateness of the solution
-  – How well have you applied the relevant theory to the problem?
-  – How hackish is your implementation, or is it robust and well-designed?
-  – Have you just cited and pasted code, or is their evidence of comprehension with further study and novel design extending beyond the lecture materials?
+- [10 marks] Sophistication and appropriateness of the solution
+  - How well have you applied the relevant theory to the problem?
+  - How hackish is your implementation, or is it robust and well-designed?
+  - Have you just cited and pasted code, or is their evidence of comprehension with further study and novel design extending beyond the lecture materials?
   
-• [10 marks] Intuition of video
-  – Does the video look like the agent is just randomly getting lucky after lots of episodes?
-  – Is it chasing and hunting down the enemies efficiently?
-  – Is it navigating gravity gracefully, or is it like it’s powered by an infinite improbability drive? – Has it learnt any surprising behaviours?
+- [10 marks] Intuition of video
+  - Does the video look like the agent is just randomly getting lucky after lots of episodes?
+  - Is it chasing and hunting down the enemies efficiently?
+  - Is it navigating gravity gracefully, or is it like it’s powered by an infinite improbability drive?
+  - Has it learnt any surprising behaviours?
 
 ## PyTorch Training
 
